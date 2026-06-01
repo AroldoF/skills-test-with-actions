@@ -82,6 +82,7 @@ def test_get_nth_fibonacci_negative():
     """Test with a negative number to raise ValueError."""
     # Arrange
     n = -1
+    
 
     # Act & Assert
     with pytest.raises(ValueError):
