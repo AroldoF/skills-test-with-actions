@@ -1,0 +1,82 @@
+name: AI Code Smell Analysis
+
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+  models: read
+  pull-requests: read
+
+jobs:
+  ai-code-smell-analysis:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Build changed source files
+        run: |
+          git fetch origin main
+
+          > source.txt
+
+          git diff --name-only origin/main...HEAD -- "*.py" | while read file; do
+            if [ -f "$file" ]; then
+              echo "===== FILE: $file =====" >> source.txt
+              cat "$file" >> source.txt
+              echo "" >> source.txt
+            fi
+          done
+
+          if [ ! -s source.txt ]; then
+            echo "No Python files changed."
+            echo "NO_FILES=true" >> $GITHUB_ENV
+          fi
+
+      - name: Analyze code with AI
+        if: env.NO_FILES != 'true'
+        id: ai
+        uses: actions/ai-inference@v2.1.1
+        with:
+          prompt-file: .github/prompts/code-smells.prompt.yml
+          file_input: |
+            code: source.txt
+
+      - name: Save AI response
+        if: env.NO_FILES != 'true'
+        run: |
+          echo '${{ steps.ai.outputs.response }}' > result.json
+
+      - name: Show AI response
+        if: env.NO_FILES != 'true'
+        run: |
+          cat result.json
+
+      - name: Validate JSON
+        if: env.NO_FILES != 'true'
+        run: |
+          jq empty result.json
+
+      - name: Fail if code smells are found
+        if: env.NO_FILES != 'true'
+        run: |
+          HAS_SMELLS=$(jq -r '.has_code_smells' result.json)
+
+          if [ "$HAS_SMELLS" = "true" ]; then
+            echo "❌ Code smells detected"
+            jq '.issues' result.json
+            exit 1
+          fi
+
+          echo "✅ No code smells detected"
+
+      - name: Skip analysis
+        if: env.NO_FILES == 'true'
+        run: |
+          echo "No Python files changed in this PR."
